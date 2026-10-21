@@ -1,0 +1,61 @@
+[
+  {
+    "path": "bin/gbot.mjs",
+    "before_sha256": "e93a44b9731475a70d298955544334e2eb6965f2db6f85d9bb38354364b2c224",
+    "after_sha256": "2bebaebf8b348c05c7b7ccb684b895cd6a8926b8e215f34526f7d9c986b2d793",
+    "edits": [
+      {
+        "old": "        function codexSenderPrefix({ threadId, machine, cwd, details = [], env = process.env } = {}) {\n            const id = oneLine(threadId);\n            if (!id) return \"\";\n            const where = oneLine(machine ?? machineName(env));\n            const dir = oneLine(cwd);\n            const head = \"from Codex thread \" + id + (where ? \" @ \" + where : \"\") + (dir ? (where ? \", \" : \" \") + \"cwd \" + dir : \"\");\n            const reply = \"reply: codex_send({threadId:\\\"\" + id + \"\\\", message:\\\"...\\\"})\" + (where ? \" via MCP on \" + where : \" via MCP\") + \" (or CLI: gbot codex send \" + id + \" \\\"...\\\")\";\n            return \"[\" + [\n                head,\n                ...details.map(oneLine).filter(Boolean),\n                reply\n            ].join(\"; \") + \"]\";\n",
+        "new": "        function codexSenderPrefix({ threadId } = {}) {\n            return threadId ? \"[GPT Codex 直接对话]\" : \"\";\n"
+      }
+    ]
+  },
+  {
+    "path": "bin/gbot-flight.mjs",
+    "before_sha256": "abcb1400c553cff6a96b294e66b0207c7947a16f7f0891658f8fda1dc57ce2f3",
+    "after_sha256": "dd0b9f553c3b9c779c7aa40dbdda4abb24f06e8fc01cfa450a166db33c45b4fc",
+    "edits": [
+      {
+        "old": "        function codexSenderPrefix({ threadId, machine, cwd, details = [], env = process.env } = {}) {\n            const id = oneLine(threadId);\n            if (!id) return \"\";\n            const where = oneLine(machine ?? machineName(env));\n            const dir = oneLine(cwd);\n            const head = \"from Codex thread \" + id + (where ? \" @ \" + where : \"\") + (dir ? (where ? \", \" : \" \") + \"cwd \" + dir : \"\");\n            const reply = \"reply: codex_send({threadId:\\\"\" + id + \"\\\", message:\\\"...\\\"})\" + (where ? \" via MCP on \" + where : \" via MCP\") + \" (or CLI: gbot codex send \" + id + \" \\\"...\\\")\";\n            return \"[\" + [\n                head,\n                ...details.map(oneLine).filter(Boolean),\n                reply\n            ].join(\"; \") + \"]\";\n",
+        "new": "        function codexSenderPrefix({ threadId } = {}) {\n            return threadId ? \"[GPT Codex 直接对话]\" : \"\";\n"
+      }
+    ]
+  },
+  {
+    "path": "mcp/mcp-grok-bot-b8c2461e.mjs",
+    "before_sha256": "a989ad87db82d952e30732f0cd7f952f434abfca6935570d48772471d289c5e6",
+    "after_sha256": "c882b2ca29b3aca93eabfea4f5490a816d0daae60e149772fa893410b2c8ccec",
+    "edits": [
+      {
+        "old": "        function codexSenderPrefix({ threadId, machine, cwd, details = [], env = process.env } = {}) {\n            const id = oneLine(threadId);\n            if (!id) return \"\";\n            const where = oneLine(machine ?? machineName(env));\n            const dir = oneLine(cwd);\n            const head = \"from Codex thread \" + id + (where ? \" @ \" + where : \"\") + (dir ? (where ? \", \" : \" \") + \"cwd \" + dir : \"\");\n            const reply = \"reply: codex_send({threadId:\\\"\" + id + \"\\\", message:\\\"...\\\"})\" + (where ? \" via MCP on \" + where : \" via MCP\") + \" (or CLI: gbot codex send \" + id + \" \\\"...\\\")\";\n            return \"[\" + [\n                head,\n                ...details.map(oneLine).filter(Boolean),\n                reply\n            ].join(\"; \") + \"]\";\n",
+        "new": "        function codexSenderPrefix({ threadId } = {}) {\n            return threadId ? \"[GPT Codex 直接对话]\" : \"\";\n"
+      }
+    ]
+  },
+  {
+    "path": "mcp/mcp-grok-bot-b8c2461e-flight.mjs",
+    "before_sha256": "95d94ea04cea9534dccf52a4a46d87256e8f0158117a22b4b9bc66e13c9c3686",
+    "after_sha256": "3b089a1cce2ff8b61eb2d1669ead644b0056484f5151a5e036694b33bfca0ca6",
+    "edits": [
+      {
+        "old": "        function codexSenderPrefix({ threadId, machine, cwd, details = [], env = process.env } = {}) {\n            const id = oneLine(threadId);\n            if (!id) return \"\";\n            const where = oneLine(machine ?? machineName(env));\n            const dir = oneLine(cwd);\n            const head = \"from Codex thread \" + id + (where ? \" @ \" + where : \"\") + (dir ? (where ? \", \" : \" \") + \"cwd \" + dir : \"\");\n            const reply = \"reply: codex_send({threadId:\\\"\" + id + \"\\\", message:\\\"...\\\"})\" + (where ? \" via MCP on \" + where : \" via MCP\") + \" (or CLI: gbot codex send \" + id + \" \\\"...\\\")\";\n            return \"[\" + [\n                head,\n                ...details.map(oneLine).filter(Boolean),\n                reply\n            ].join(\"; \") + \"]\";\n",
+        "new": "        function codexSenderPrefix({ threadId } = {}) {\n            return threadId ? \"[GPT Codex 直接对话]\" : \"\";\n"
+      }
+    ]
+  },
+  {
+    "path": "scripts/gbot-relay.mjs",
+    "before_sha256": "71f66a31431fb47f0734fcfd89ede42dddf120d93f4202d93a9b362e1dde0ddc",
+    "after_sha256": "66936e65475fb0a774ac96a539a93eaafe6d804d715fffa45a7b2006fcc17a92",
+    "edits": [
+      {
+        "old": "                    const text = `[Grok sender ${targetId}; message ${sourceId}]\\n${approvalNotice ? \"Approval notice. Your next final answer is not returned automatically.\" : parent ? \"Reply to a tracked request. Your next final answer is not returned automatically.\" : \"Linked conversation. Your corresponding final answer returns automatically to Grok.\"}\\n\\n${body}`;\n",
+        "new": "                    const text = (approvalNotice ? \"Grok（审批提示，本轮答复不会自动发回）：\" : parent ? \"Grok：\" : \"Grok：\") + \"\\n\" + body;\n"
+      },
+      {
+        "old": "        function codexSenderPrefix({ threadId, machine, cwd, details = [], env = process.env } = {}) {\n            const id = oneLine(threadId);\n            if (!id) return \"\";\n            const where = oneLine(machine ?? machineName(env));\n            const dir = oneLine(cwd);\n            const head = \"from Codex thread \" + id + (where ? \" @ \" + where : \"\") + (dir ? (where ? \", \" : \" \") + \"cwd \" + dir : \"\");\n            const reply = \"reply: codex_send({threadId:\\\"\" + id + \"\\\", message:\\\"...\\\"})\" + (where ? \" via MCP on \" + where : \" via MCP\") + \" (or CLI: gbot codex send \" + id + \" \\\"...\\\")\";\n            return \"[\" + [\n                head,\n                ...details.map(oneLine).filter(Boolean),\n                reply\n            ].join(\"; \") + \"]\";\n",
+        "new": "        function codexSenderPrefix({ threadId } = {}) {\n            return threadId ? \"[GPT Codex 直接对话]\" : \"\";\n"
+      }
+    ]
+  }
+]
