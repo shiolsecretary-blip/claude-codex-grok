@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560" role="img" aria-labelledby="t d">
+  <title id="t">Claude Code、Codex、Grok Bot 三方互通总览</title>
+  <desc id="d">Claude 和 Codex 都向同一个 Grok Bot 对话发话；后台转发器按点名分拣：回 Codex 的和以 @GPT 开头的推给 Codex，其余存进本机收件箱，@Claude 开头的打标；Codex 也能用 ask_claude 投信进收件箱；Claude 定时任务收信后接上并连续对话；Claude 和 Codex 之间用 gpt_chat 直接对话。</desc>
+  <style>
+    .bg{fill:#ffffff}
+    .t{font:500 16px -apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;fill:#1f2328}
+    .s{font:400 13px -apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;fill:#59636e}
+    .l{font:400 12.5px -apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;fill:#59636e}
+    .m{font:400 12px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#59636e}
+    .claude{fill:#eeedfe;stroke:#534ab7}
+    .codex{fill:#e1f5ee;stroke:#0f6e56}
+    .grok{fill:#faece7;stroke:#993c1d}
+    .infra{fill:#f6f8fa;stroke:#8c959f}
+    .ln{stroke:#6e7781;stroke-width:1.6;fill:none}
+    .push{stroke:#0f6e56;stroke-width:1.8;fill:none}
+    .mail{stroke:#534ab7;stroke-width:1.8;fill:none;stroke-dasharray:6 4}
+    .ah{fill:#6e7781}.ahp{fill:#0f6e56}.ahm{fill:#534ab7}
+    @media (prefers-color-scheme: dark){
+      .bg{fill:#0d1117}
+      .t{fill:#e6edf3}.s,.l,.m{fill:#9198a1}
+      .claude{fill:#26215c;stroke:#afa9ec}
+      .codex{fill:#04342c;stroke:#5dcaa5}
+      .grok{fill:#4a1b0c;stroke:#f0997b}
+      .infra{fill:#161b22;stroke:#6e7781}
+      .ln{stroke:#9198a1}.ah{fill:#9198a1}
+      .push{stroke:#5dcaa5}.ahp{fill:#5dcaa5}
+      .mail{stroke:#afa9ec}.ahm{fill:#afa9ec}
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah"/></marker>
+    <marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ahp"/></marker>
+    <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ahm"/></marker>
+  </defs>
+  <rect class="bg" width="900" height="560"/>
+
+  <!-- 直接对话：Claude ↔ Codex -->
+  <path class="ln" d="M155 100 V40 H745 V98" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="l" x="450" y="60" text-anchor="middle">gpt_chat.py：Claude 和 Codex 直接对话，当场拿回复</text>
+
+  <!-- 三家 -->
+  <rect class="claude" x="40" y="100" width="230" height="110" rx="10" stroke-width="1.2"/>
+  <text class="t" x="155" y="140" text-anchor="middle">Claude Code</text>
+  <text class="s" x="155" y="164" text-anchor="middle">总调度</text>
+  <text class="m" x="155" y="188" text-anchor="middle">grok_chat · gpt_chat</text>
+
+  <rect class="grok" x="335" y="80" width="230" height="90" rx="10" stroke-width="1.2"/>
+  <text class="t" x="450" y="116" text-anchor="middle">Grok Bot</text>
+  <text class="s" x="450" y="142" text-anchor="middle">大家共用同一条对话</text>
+
+  <rect class="codex" x="630" y="100" width="230" height="110" rx="10" stroke-width="1.2"/>
+  <text class="t" x="745" y="140" text-anchor="middle">Codex（GPT）</text>
+  <text class="s" x="745" y="164" text-anchor="middle">画面</text>
+  <text class="m" x="745" y="188" text-anchor="middle">grok-bot MCP</text>
+
+  <!-- 发话 -->
+  <line class="ln" x1="270" y1="140" x2="331" y2="125" marker-end="url(#a)"/>
+  <line class="ln" x1="630" y1="140" x2="569" y2="125" marker-end="url(#a)"/>
+
+  <!-- 转发器 -->
+  <line class="ln" x1="450" y1="170" x2="450" y2="246" marker-end="url(#a)"/>
+  <text class="l" x="462" y="214">每条新消息</text>
+  <rect class="infra" x="335" y="250" width="230" height="80" rx="10" stroke-width="1.2"/>
+  <text class="t" x="450" y="282" text-anchor="middle">后台转发器</text>
+  <text class="s" x="450" y="306" text-anchor="middle">按点名分拣（打过补丁）</text>
+
+  <!-- 推给 Codex -->
+  <path class="push" d="M565 290 H745 V214" marker-end="url(#ap)"/>
+  <text class="l" x="655" y="280" text-anchor="middle">回 Codex 的 · 「@GPT」开头</text>
+
+  <!-- 存进收件箱 -->
+  <line class="ln" x1="450" y1="330" x2="450" y2="416" marker-end="url(#a)"/>
+  <text class="l" x="462" y="372">其余只存档</text>
+  <text class="l" x="462" y="392">「@Claude」开头的打标</text>
+  <rect class="infra" x="335" y="420" width="230" height="80" rx="10" stroke-width="1.2"/>
+  <text class="t" x="450" y="452" text-anchor="middle">本机收件箱</text>
+  <text class="m" x="450" y="476" text-anchor="middle">grok-inbox.jsonl</text>
+
+  <!-- Codex 投信 -->
+  <path class="mail" d="M810 210 V460 H569" marker-end="url(#am)"/>
+  <text class="l" x="690" y="450" text-anchor="middle">ask_claude.py 投信</text>
+
+  <!-- 收信 -->
+  <line class="mail" x1="335" y1="460" x2="274" y2="460" marker-end="url(#am)"/>
+  <text class="l" x="304" y="448" text-anchor="middle">收信</text>
+  <rect class="claude" x="40" y="420" width="230" height="80" rx="10" stroke-width="1.2"/>
+  <text class="t" x="155" y="452" text-anchor="middle">Claude 定时任务</text>
+  <text class="s" x="155" y="476" text-anchor="middle">每 30 分钟收一次信</text>
+
+  <!-- 接上 -->
+  <line class="mail" x1="155" y1="420" x2="155" y2="214" marker-end="url(#am)"/>
+  <text class="l" x="167" y="310">有点名就接上，</text>
+  <text class="l" x="167" y="330">在同一轮里连续来回</text>
+
+  <!-- 图例 -->
+  <line class="push" x1="40" y1="536" x2="72" y2="536"/><text class="l" x="80" y="540">实时推送</text>
+  <line class="mail" x1="180" y1="536" x2="212" y2="536"/><text class="l" x="220" y="540">收件箱（定时收）</text>
+  <line class="ln" x1="350" y1="536" x2="382" y2="536"/><text class="l" x="390" y="540">直接发话</text>
+</svg>

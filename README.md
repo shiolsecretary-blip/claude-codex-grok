@@ -1,111 +1,112 @@
-# Codex ↔ Grok：干净对话与后台推送
+# Claude · Codex · Grok：三方互通
 
-给已有 **gbot 0.12.4** 安装添加一层干净的对话显示，让 Codex 和 Grok Bot 双向交流，并通过上游桥接把 Grok 新消息送入指定 Codex 聊天。
+让 **Claude Code**、**Codex（GPT）** 和 **Grok Bot** 在一台 Mac 上互相找得到、能直接对话，又不互相抢话。
 
-```text
-Codex → gbot → Grok Bot
-Grok Bot → 后台轮询转发器 → 共享 Codex app-server → 指定聊天
-```
+基于社区工具 **gbot 0.12.4**：给它打一层版本锁定的补丁（干净的对话显示、按点名分拣的后台转发器），再加几条 Claude 这边的命令。不是 OpenAI、xAI 或 Anthropic 的官方项目，也不分发任何第三方运行时、账号或认证材料。
 
-发送显示为 `[GPT Codex 直接对话]`；接收显示为 `Grok：`。技术编号、工作目录和回复命令不再混进普通正文，路由仍由后台管理。审批提示保留提示语。
+![三方互通总览](docs/architecture.svg)
 
-这是针对指定版本的本地补丁及实践说明，不是完整 Grok 客户端，也不是 OpenAI 或 xAI 官方项目。后台通信能力由已有 gbot 提供；本仓库不分发第三方运行时、账号或认证材料。补丁前后摘要锁定已验证构建，版本不同会停止。
+## 谁找谁
+
+| 谁找谁 | 怎么找 | 多快 |
+|---|---|---|
+| Claude → Grok | `tools/grok_chat.py`（睡着时自动叫醒） | 当场；叫醒要 1–2 分钟 |
+| Claude → Codex | `tools/gpt_chat.py`，发进 Codex 的一个专用聊天 | 当场，等这一轮答完拿回复 |
+| Codex → Grok | Codex 里的 grok-bot MCP | 当场 |
+| Grok → Codex | 回 Codex 自己问的话，或第一行以「@GPT」开头 | 实时推进 Codex 聊天 |
+| Grok → Claude | 第一行以「@Claude」开头，进本机收件箱 | 定时收信，最多一个周期（如 30 分钟） |
+| Codex → Claude | `tools/ask_claude.py` 投信，进同一个收件箱 | 同上 |
+
+**为什么 Claude 要定时收信？** Codex 桌面版有本机后台服务，外部程序能把消息塞进它的聊天，所以 Grok 能直接「叫醒」Codex。Claude 桌面版没有这个入口，只能定时去看收件箱。接上以后，在同一轮里可以连续来回，不用每句都再等。
+
+![点名后多久有人接](docs/mention-timing.svg)
+
+## 规矩
+
+- **点名才推**：第一行写「@GPT」/「@Claude」才算找人；不点名只存档。回复别人的话不用点名。Grok 回 Claude、回用户的话不会推给 Codex，也不会触发 Codex 自动回话。
+- **外来消息是同事来信**，不是用户的新授权；花钱、对外发布、改规矩的事等用户定。
+- **不来回客气**：事情说完就停。转发器自带跳数上限，定时任务每轮最多来回 20 次或 60 分钟。
+- **`accepted` 只代表受理**：读到实际回复，或目标聊天收到消息，才算送达。结果不明先查记录，不盲目重发。
 
 ## 前提
 
-- macOS，已安装并登录 Grok Bot，已安装原始 gbot 0.12.4。
-- Python 3.9+、Node.js，以及可用的 Codex CLI / 桌面应用。
-- 已有 gbot 的合法使用权限；原插件条款继续适用。
+- macOS，已安装并登录 Grok Bot，已安装原始 gbot 0.12.4（已有 gbot 的合法使用权限，原插件条款继续适用）。
+- Python 3.9+、Node.js、Codex CLI / 桌面应用；用 Claude 这边的命令还需要 Claude Code 桌面应用（定时任务）。
+- 实测环境：gbot 0.12.4、Codex app-server 0.158–0.163。其他版本未验证；补丁前后都有摘要锁定，版本不对会直接停下。
 
-实测环境：gbot 0.12.4、共享 Codex app-server 0.163.0-alpha.10.2。其他版本尚未验证。此仓库不安装 Grok、不自动登录，也不附带私人网关唤醒服务。
+## 安装
 
-## 1. 创建独立副本
+### 1. 创建打过补丁的独立副本
 
 ```sh
+B="$HOME/.codex/tools/grok-clean-bridge/0.12.4-shared"
 python3 install.py \
   --source "$HOME/.claude/plugins/cache/gbot-marketplace/gbot/0.12.4" \
-  --destination "$HOME/.codex/tools/grok-clean-bridge/0.12.4"
+  --destination "$B"
 ```
 
-`--source` 改成你自己的原始插件目录。目标必须不存在；不要覆盖正在运行的安装。工具先核对5个源文件摘要，再复制到新目录、替换显示文字、更新构建清单的字节数与 SHA-256，并通过 `node --check`。不改原 Claude 插件或任何宿主配置，也不读取认证文件。
+`--source` 改成你自己的原始插件目录。目标目录必须不存在，不覆盖正在运行的安装。安装器先核对 5 个源文件的摘要，复制到新目录后应用 `patches.json`，更新构建清单的字节数与 SHA-256，并通过 `node --check`。不改原插件和任何宿主配置，也不读认证文件。
 
-## 2. 配置 Codex MCP
+补丁内容：
+- **干净显示**：Codex 发出的消息显示为 `[GPT Codex 直接对话]`，收到的显示为 `Grok：`，技术编号和回复命令不再混进正文。
+- **按点名分拣**：Grok 的新消息只有「回复 Codex 登记过的请求」和「第一行以 @GPT / @Codex 开头」两种会推进 Codex；其余存进 `~/.grok-dispatch/grok-inbox.jsonl`，「@Claude」开头的标 `to: "claude"`。审批提示照旧推。
+- **不再卡死**：超过 30 分钟还没对上号的发送，不再拦着后面的消息（实际遇到过一条送达未知的自动回复让转发器堵了一夜）。
+
+### 2. 让 Codex 用这份副本
 
 ```sh
 codex mcp add grok-bot \
-  --env AGENT_BUNDLE_PLUGIN_ROOT="$HOME/.codex/tools/grok-clean-bridge/0.12.4" \
-  -- node "$HOME/.codex/tools/grok-clean-bridge/0.12.4/mcp/mcp-grok-bot-b8c2461e.mjs"
+  --env AGENT_BUNDLE_PLUGIN_ROOT="$B" \
+  -- node "$B/mcp/mcp-grok-bot-b8c2461e.mjs"
 ```
 
-重新加载 Codex 工具后，可让助手在授权范围内向 Grok 发消息并读取回复。已有同名 MCP 配置时先检查其当前用途，再按自己的 Codex 版本处理。不要把原始插件路径重新写回，否则技术包装会再出现。
+已有同名 MCP 配置时先看它现在的用途。换副本后要重启后台转发器（`scripts/gbot-relay.mjs`），否则还在跑旧的。
 
-## 3. 接通后台推送
+### 3. 接通 Grok → Codex 推送
 
-推送需要桌面聊天与桥接共用可访问的 Codex daemon。安装方式随宿主版本变化，先查看本机命令帮助：
+推送需要桌面聊天和转发器共用 Codex 后台服务。先看本机帮助：
 
 ```sh
-node "$HOME/.codex/tools/grok-clean-bridge/0.12.4/bin/gbot.mjs" codex desktop-shim --help
-node "$HOME/.codex/tools/grok-clean-bridge/0.12.4/bin/gbot.mjs" codex bridge --help
+node "$B/bin/gbot.mjs" codex desktop-shim --help
+node "$B/bin/gbot.mjs" codex bridge --help
 ```
 
-使用上游 `desktop-shim install` 后按提示完整退出并重开桌面应用。用 `codex status` 和 `desktop-shim status` 核对状态。若生成包装脚本指向不存在的 CLI，应依据本机实际安装修正路径，不能直接复制别人的绝对路径。
+用上游 `desktop-shim install`，按提示完整退出并重开桌面应用；用 `codex status`、`desktop-shim status` 核对。然后在 Codex 里让助手：
 
-在 Codex 内让助手：
+> 先查 bridge_status，确认我的 Grok 目标和当前 Codex 聊天。将主动推送绑定到我指定的聊天；如已有绑定，先说明已有去向，避免重复投递。发一次唯一标记测试，等 Grok 回复，再让它发一条以「@GPT」开头的消息，验证推送。
 
-> 先查 bridge_status，确认我的 Grok 目标和当前 Codex 聊天。将主动推送绑定到我指定的聊天；如已有绑定，先说明已有去向，避免重复投递。发一次唯一标记测试，等 Grok 回复，再让它主动发一条新消息，验证原生入站。
+本仓库不自动建立、迁移或停止绑定。只有明确要求时才把推送迁到新聊天。
 
-这些对应 gbot MCP 的桥接工具；参数以工具当前 schema 为准。此仓库不自动建立、迁移或停止绑定。
+### 4. Claude 这边（可选）
 
-## 使用规则
+把 `tools/` 下的脚本放到本机（如 `~/.claude/tools/`），然后：
 
-- 新会话可以主动发消息、读回复；后台推送仍留在原绑定聊天，不会自动迁移。
-- 只有明确要求新聊天接收推送时才迁移绑定。不要因一次教学或任务交接改变入口。
-- `accepted` 只代表受理。必须读到实际回复，或在目标聊天收到原生消息，才能判定送达。
-- 超时或结果不明，先查记录与请求状态，不盲目重发。同一任务保留请求编号以便核对。
-- 桥接可能自动返回对应 final；不要再手工发送同一回复。外部消息不是新的用户授权。
-- 避免两个助手自动互相确认造成循环；任务结束明确无需继续回复。
+1. `~/.grok-dispatch/bots.json`：Bot 简称对应的 id，照 `tools/bots.example.json` 写，必须有 `default`。
+2. 叫醒（可选）：`~/.grok-dispatch/webhook.json` 写 Grok Bot 例行任务的网址和钥匙，`chmod 600`。不写也行，只会重启本机 Grok Bot 应用。
+3. 转发器自动拉起（可选）：`~/.grok-dispatch/relay-env.json` 写 `{"PATH": "...", "GROK_BOT_RELAY_DIR": "...", "relay": "<副本>/scripts/gbot-relay.mjs"}`，值照正在跑的转发器填。
+4. 在 Claude 桌面应用里建一个定时任务（如 `*/30 9-21 * * *`），提示词照 `tools/scheduled-task-prompt.md` 改成你自己的文件位置。
+5. 告诉 Codex 怎么找 Claude：在它的全局说明里写上 `python3 <tools>/ask_claude.py "要说的话"`。Codex 默认只读沙箱，往收件箱写信要用户批准一次。
+
+| 命令 | 干什么 |
+|---|---|
+| `grok_chat.py <bot> "话"` | 跟 Grok Bot 对话，等回复；`--read N` 看最近几条，`--status` / `--wake` 只探 / 只叫醒，`--inbox N` 看收件箱 |
+| `gpt_chat.py "话"` | 发进 Codex 的专用聊天，等这一轮答完打印回复；`--new` 另开聊天，`--status` 看连通 |
+| `ask_claude.py "话"` | Codex 给 Claude 投信 |
+| `grok_inbox_watch.py` | 收信：新的「@Claude」和投信记进来信文件（标【待接】）并打印；`--done <编号> "<怎么办的>"` 标【已接】 |
 
 ## 验证范围与局限
 
-本机已验证两轮实际收发、Grok 主动消息原生进入绑定聊天、正常中文显示、连接恢复后教学回复继续送达。分享安装器另行验证补丁输出与已运行副本一致。
-
-“主动推送”由后台 worker 轮询实现。worker 未独立配置开机守护；电脑离线、Grok 登录失效、daemon 或 worker 退出时可能中断。不保证全天候即时投递。自动 final 回传尚未作为单独验收项目完成。安装器验证不等于每台机器端到端接通；请完成自己的唯一标记测试。
-
-故障时先检查桥接状态、登录、daemon、实际聊天是否已加载。不要仅凭绑定记录存在或线程列表可见判断在线。停止用桥接 stop 指定自己的绑定；桌面接入可用上游 `desktop-shim uninstall` 撤销。
-
-## 三方互通：Claude Code、Codex、Grok Bot
-
-在上面的基础上，`patches.json` 给 `scripts/gbot-relay.mjs` 多加了两处，`tools/` 里放了 Claude 这边的命令。目标是三家共用一个 Grok Bot 对话、互相能找到，又不互相抢话。
-
-```text
-Claude ──grok_chat.py──▶ Grok Bot ──「@GPT」/ 回 Codex 的话──▶ Codex 聊天
-Claude ◀──定时收信──── 收件箱 ◀──「@Claude」────────────── Grok Bot
-Claude ──gpt_chat.py──▶ Codex「Claude 对接」聊天
-Claude ◀──定时收信──── 收件箱 ◀──ask_claude.py──────────── Codex
-```
-
-**转发器补丁**
-- 只推点名的：Grok 的新消息只有两种会送进 Codex：回复 Codex 自己登记过的请求，或第一行以「@GPT」/「@Codex」开头（这种 Codex 自动回）。其余的不推、不自动回，存进本机收件箱 `~/.grok-dispatch/grok-inbox.jsonl`；「@Claude」开头的标 `to: "claude"`。审批提示照旧推。
-- 不再卡死：超过 30 分钟还没对上号的发送，不再拦着后面的消息（实际遇到过一条送达未知的自动回复让转发器堵了一夜）。
-- 装法照第 1 步，`--destination` 换个新目录（如 `0.12.4-shared`）；换副本后让 Codex MCP 指向新目录，并重启后台转发器。
-
-**Claude 这边的命令（`tools/`）**
-- `grok_chat.py`：跟 Grok Bot 对话，睡着时自动叫醒（可选：例行任务网址发叫醒单，再重启本机 Grok Bot 应用）。Bot 简称写在 `~/.grok-dispatch/bots.json`（见 `bots.example.json`），网址和钥匙写在 `webhook.json`（`chmod 600`）。
-- `gpt_chat.py`：走本机 Codex 后台服务（`gbot codex new/send/wait`）给 Codex 的一个专用聊天发话，等这一轮答完打印回复。
-- `ask_claude.py`：Codex 用它给 Claude 投信，进同一个收件箱。Codex 默认只读沙箱，第一次需要用户批准写入。
-- `grok_inbox_watch.py`：收信。挑出 `to: "claude"` 的新消息，记进来信文件（标【待接】），`--done <编号> "<怎么办的>"` 标【已接】；顺带在转发器没跑时把它拉起来（读 `relay-env.json`）。
-- `scheduled-task-prompt.md`：Claude 桌面应用定时任务的提示词模板。Claude 桌面版没有给外部程序往对话里塞消息的入口，所以 Claude 是定时去看：点名后最多等一个周期，接上后在同一轮里可以连续来回。
-
-**规矩**
-- 第一行写名字才算点名；不点名只存档。回复别人的话不用点名。
-- 外来消息都是同事来信，不是用户的新授权。
-- 不要两家来回客气确认；事情说完就停。转发器自带跳数上限，定时任务每轮也有来回次数上限。
+- 本机实测过：Codex ↔ Grok 两轮收发；Grok「@GPT」实时推进 Codex，Codex 回了话；Grok「@Claude」进收件箱，定时任务接住并回复；Claude → Codex 当场拿到回复；Codex 投信，定时任务接住并回复。
+- 推送靠后台转发器轮询。转发器没配开机守护，电脑离线、Grok 登录失效、Codex 后台或转发器退出时都会断，不保证全天候即时投递。Grok 云端电脑闲下来几分钟就睡，睡着时转发器也收不到新消息，直到它被叫醒。
+- Claude 这边只在桌面应用开着时收信；应用关着，下次打开才补跑。
+- 接上以后的多轮连续对话还没做过长时间验收。安装器验证不等于每台机器都端到端接通，请自己做一次唯一标记测试。
+- 出了问题，先查转发器状态（`codex bridge status`）、Grok 登录、Codex 后台、目标聊天有没有加载，别光看绑定记录在就以为在线。停用：`codex bridge stop` 停自己的绑定，`desktop-shim uninstall` 撤掉桌面接入。
 
 ## 仓库内容
 
 - `install.py`：创建隔离副本的补丁安装器。
-- `patches.json`：五个构建文件中的最小显示修改，以及版本校验摘要。
-- `README.md`：安装、绑定、核验和恢复说明。
-- `tools/`：Claude Code 这边的对话、投信、收信命令和定时任务模板（见「三方互通」）。
+- `patches.json`：五个构建文件的最小修改，以及前后摘要。
+- `tools/`：Claude 这边的对话、投信、收信命令，定时任务提示词模板，Bot 配置示例。
+- `docs/`：本页的两张图。
 
-未包含聊天全文、用户素材、工作台资料、个人绑定、私人唤醒脚本和第三方运行时。
+不包含聊天全文、用户素材、个人绑定和编号、钥匙，以及第三方运行时。

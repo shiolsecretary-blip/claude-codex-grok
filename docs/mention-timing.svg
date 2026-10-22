@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="330" viewBox="0 0 900 330" role="img" aria-labelledby="t d">
+  <title id="t">点名后多久有人接</title>
+  <desc id="d">Claude 定时任务固定在整点和半点收信。10:05 点名，10:30 接上；聊得短 10:45 结束，下一次照常 11:00；聊得长到 11:20，11:00 那次跳过，下一次 11:30。</desc>
+  <style>
+    .bg{fill:#ffffff}
+    .t{font:500 15px -apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;fill:#1f2328}
+    .l{font:400 13px -apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;fill:#59636e}
+    .ax{stroke:#d0d7de;stroke-width:1}
+    .tk{stroke:#8c959f;stroke-width:1}
+    .who{fill:#faece7;stroke:#993c1d}
+    .chat{fill:#eeedfe;stroke:#534ab7}
+    .wait{stroke:#8c959f;stroke-width:2;stroke-dasharray:5 5;fill:none}
+    .chk{fill:none;stroke:#59636e;stroke-width:2}
+    .skip{fill:none;stroke:#cf222e;stroke-width:2}
+    @media (prefers-color-scheme: dark){
+      .bg{fill:#0d1117}.t{fill:#e6edf3}.l{fill:#9198a1}
+      .ax{stroke:#30363d}.tk{stroke:#6e7781}
+      .who{fill:#4a1b0c;stroke:#f0997b}.chat{fill:#26215c;stroke:#afa9ec}
+      .wait{stroke:#6e7781}.chk{stroke:#9198a1}.skip{stroke:#ff7b72}
+    }
+  </style>
+  <rect class="bg" width="900" height="330"/>
+  <g class="l" text-anchor="middle">
+    <text x="160" y="40">10:00</text><text x="335" y="40">10:30</text><text x="510" y="40">11:00</text><text x="685" y="40">11:30</text><text x="860" y="40">12:00</text>
+  </g>
+  <line class="ax" x1="160" y1="56" x2="860" y2="56"/>
+  <line class="tk" x1="160" y1="50" x2="160" y2="62"/><line class="tk" x1="335" y1="50" x2="335" y2="62"/><line class="tk" x1="510" y1="50" x2="510" y2="62"/><line class="tk" x1="685" y1="50" x2="685" y2="62"/><line class="tk" x1="860" y1="50" x2="860" y2="62"/>
+
+  <text class="t" x="40" y="112">聊得短</text>
+  <circle class="who" cx="189" cy="107" r="7" stroke-width="1.2"/>
+  <line class="wait" x1="200" y1="107" x2="333" y2="107"/>
+  <text class="l" x="266" y="140" text-anchor="middle">点名，最多等 30 分钟</text>
+  <rect class="chat" x="335" y="92" width="88" height="30" rx="5" stroke-width="1.2"/>
+  <text class="l" x="379" y="140" text-anchor="middle">聊 15 分钟</text>
+  <circle class="chk" cx="510" cy="107" r="7"/>
+  <text class="l" x="510" y="140" text-anchor="middle">11:00 照常再收信</text>
+
+  <text class="t" x="40" y="212">聊得长</text>
+  <circle class="who" cx="189" cy="207" r="7" stroke-width="1.2"/>
+  <line class="wait" x1="200" y1="207" x2="333" y2="207"/>
+  <text class="l" x="266" y="240" text-anchor="middle">点名，最多等 30 分钟</text>
+  <rect class="chat" x="335" y="192" width="292" height="30" rx="5" stroke-width="1.2"/>
+  <text class="l" x="420" y="212" text-anchor="middle">接上后连续聊 50 分钟</text>
+  <circle class="skip" cx="510" cy="207" r="7" stroke-dasharray="3 3"/>
+  <text class="l" x="540" y="240" text-anchor="middle">11:00 这次跳过（不会两轮同时接）</text>
+  <circle class="chk" cx="685" cy="207" r="7"/>
+  <text class="l" x="740" y="212">11:30 再收信</text>
+
+  <text class="l" x="40" y="296">规则：固定整点、半点收信（会随机晚几分钟）；接上后在同一轮里连续来回，一轮最多 20 次或 60 分钟。</text>
+</svg>
