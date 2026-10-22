@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Collect "@Claude" mentions (from Grok Bot via the patched relay, or from Codex via ask_claude.py).
+"""Collect "@Claude" mentions (from Grok Bot via the patched relay, or from Codex via ask_claude.py),
+filed by project.
 
 Run it first in a scheduled Claude task (e.g. every 30 minutes):
   1. restarts the relay worker if it is not running (from ~/.grok-dispatch/relay-env.json);
   2. reads new lines of ~/.grok-dispatch/grok-inbox.jsonl and keeps those with to == "claude";
-  3. appends them to the letters file (CLAUDE_LETTERS, default ~/.grok-dispatch/letters.md) marked 【待接】;
-  4. prints them, or "没有新的点名" when there is nothing new.
-  grok_inbox_watch.py --done <sourceId> "<what was done>"   marks a letter 【已接】.
-The first run reads the whole inbox; letters already in the letters file are skipped, so re-runs never duplicate.
-The read position is saved only after the letters file is written, so a failed write is retried next time.
-Every change to the letters file takes a short lock (letters.lock, separate from the long collector lock) and is
+  3. reads the header 【project｜ticket】 in the first lines and appends the letter to that project's letters file
+     (projects.json, see project_route.py) marked 【待接】; letters without a header, or with an unknown project,
+     go to the default letters file (CLAUDE_LETTERS, default ~/.grok-dispatch/letters.md) marked 【待接·待分流】;
+  4. prints them with project, ticket, letters file and handoff file, or "没有新的点名" when there is nothing new.
+  grok_inbox_watch.py --pending                               lists letters not yet handled, in every letters file.
+  grok_inbox_watch.py --done <sourceId> "<what was done>"   marks a letter 【已接】 (searched in every letters file).
+The first run reads the whole inbox; letters already in a letters file are skipped, so re-runs never duplicate.
+The read position is saved only after the letters files are written, so a failed write is retried next time.
+Every change to a letters file takes a short lock (letters.lock, separate from the long collector lock) and is
 written to a temp file then swapped in, so concurrent claim / hand-back / --done never overwrite each other.
 With --run-claude, new letters are claimed as 【接手中 · 终端】 before `claude -p` starts and handed back as 【待接】 if it fails.
 """
@@ -29,6 +33,8 @@ LOG = os.path.join(D, "inbox-watch.log")
 RELAY_ENV = os.path.join(D, "relay-env.json")
 LETTERS = os.environ.get("CLAUDE_LETTERS", os.path.join(D, "letters.md"))
 DAILY_CAP = 30
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import project_route as pr  # noqa: E402
 
 
 def log(msg):
@@ -75,35 +81,59 @@ def letters_lock():
         yield
 
 
-def read_letters():
+def read_letters(path=LETTERS):
     try:
-        return open(LETTERS, encoding="utf-8").read()
+        return open(path, encoding="utf-8").read()
     except FileNotFoundError:
         return ""
 
 
-def write_letters(text):
+def letter_files():
+    return [LETTERS] + [f for f in pr.all_letters() if f != LETTERS]
+
+
+def route(m):
+    """这封信该进哪个来信文件：(文件, 项目正名或 None, 单号或 None)。"""
+    project, ticket, _ = pr.parse(m.get("body") or "")
+    if not project and m.get("project"):
+        project, ticket = pr.resolve(m["project"]), m.get("ticket")
+    return (pr.letters(project) if project else LETTERS), project, ticket
+
+
+def write_letters(text, path=LETTERS):
     """先写临时文件再整体替换：写到一半出错，原文件不受影响。"""
-    tmp = LETTERS + ".tmp"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(text)
         f.flush()
         os.fsync(f.fileno())
-    os.replace(tmp, LETTERS)
+    os.replace(tmp, path)
 
 
 def record(msgs, note="【待接】"):
+    kept = []
     with letters_lock():
-        have = read_letters()
-        msgs = [m for m in msgs if f"· {m.get('sourceId')}\n" not in have]
-        if not msgs:
-            return msgs
-        text = have or "# Letters\n\n「@Claude」开头的来信，收信脚本自动存在这里（新的在下面）。接了把【待接】改成【已接 · 怎么办的】。\n"
+        groups = {}
         for m in msgs:
-            who = "来自 GPT · " if m.get("from") == "gpt" else ""
-            text += f"\n## {note} {who}{datetime.now().strftime('%Y-%m-%d %H:%M')} · {m.get('sourceId')}\n\n{(m.get('body') or '').strip()}\n"
-        write_letters(text)
-    return msgs
+            path, project, ticket = route(m)
+            m["_letters"], m["_project"], m["_ticket"] = path, project, ticket
+            groups.setdefault(path, []).append(m)
+        for path, ms in groups.items():
+            have = read_letters(path)
+            ms = [m for m in ms if f"· {m.get('sourceId')}\n" not in have]
+            if not ms:
+                continue
+            title = "Letters（没写信头的待分流信也在这里）" if path == LETTERS else "来信：" + (ms[0]["_project"] or "")
+            text = have or f"# {title}\n\n收信脚本按信头【项目｜单号】自动存在这里（新的在下面）。接了用 grok_inbox_watch.py --done 编号 标已接。\n"
+            for m in ms:
+                who = "来自 GPT · " if m.get("from") == "gpt" else "来自 Grok · "
+                tag = note if m["_project"] else note.replace("】", "·待分流】", 1)
+                head = f"【{m['_project']}｜{m['_ticket']}】 " if m["_project"] else "【没写信头】 "
+                text += f"\n## {tag} {head}{who}{datetime.now().strftime('%Y-%m-%d %H:%M')} · {m.get('sourceId')}\n\n{(m.get('body') or '').strip()}\n"
+            write_letters(text, path)
+            kept += ms
+    return kept
 
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
@@ -147,10 +177,15 @@ def set_status(ids, frm, to):
     """把来信里这几条的标题状态从 frm 换成 to（终端方案认领 / 退回用）。"""
     import re
     with letters_lock():
-        text = read_letters()
-        for i in ids:
-            text = re.sub(r"^## " + re.escape(frm) + r"(.*· " + re.escape(str(i)) + r")\s*$", "## " + to + r"\1", text, count=1, flags=re.M)
-        write_letters(text)
+        for path in letter_files():
+            text = read_letters(path)
+            if not text:
+                continue
+            new = text
+            for i in ids:
+                new = re.sub(r"^## " + re.escape(frm) + r"(.*· " + re.escape(str(i)) + r")\s*$", "## " + to + r"\1", new, count=1, flags=re.M)
+            if new != text:
+                write_letters(new, path)
 
 
 def notify(text):
@@ -209,20 +244,27 @@ def main(run=False):
         print(f"今天点名已超 {DAILY_CAP} 条，这几条只记进来信文件，不回，等人看。")
         return
     for m in msgs:
-        who = "（来自 GPT，用 gpt_chat.py 回）" if m.get("from") == "gpt" else "（来自 Grok，用 grok_chat.py 回）"
-        print(f"--- {m.get('sourceId')} {who}\n{(m.get('body') or '').strip()}\n")
+        who = "来自 GPT，用 gpt_chat.py 回" if m.get("from") == "gpt" else "来自 Grok，用 grok_chat.py 回"
+        if m["_project"]:
+            where = f"项目【{m['_project']}｜{m['_ticket']}】｜回信带 --project \"{m['_project']}\" --ticket \"{m['_ticket']}\"｜先读 {pr.handoff(m['_project'])} 最上面一节｜来信在 {m['_letters']}"
+        else:
+            where = f"没写信头（待分流）｜来信在 {m['_letters']}｜先看内容判断是哪个项目，回信时请对方以后第一行写【项目｜单号】"
+        print(f"--- {m.get('sourceId')}（{who}）\n{where}\n{(m.get('body') or '').strip()}\n")
     if run:
         run_claude(msgs)  # 还拿着锁：两分钟后的下一次检查不会重复起
 
 
 def mark_done(source_id, how):
-    """把来信里这条的【待接…】标成【已接 · how】。用法：grok_inbox_watch.py --done t146s470 "回了她…" """
+    """把来信里这条的【待接…】标成【已接 · how】（在所有来信文件里找）。用法：grok_inbox_watch.py --done t146s470 "回了她…" """
     import re
     pat = re.compile(r"^## 【(?:待接|接手中)[^】]*】(.*· " + re.escape(source_id) + r")\s*$", re.M)
+    n = 0
     with letters_lock():
-        new, n = pat.subn(lambda m: "## 【已接 · " + how.strip().replace("\n", " ") + "】" + m.group(1), read_letters(), count=1)
-        if n:
-            write_letters(new)
+        for path in letter_files():
+            new, n = pat.subn(lambda m: "## 【已接 · " + how.strip().replace("\n", " ") + "】" + m.group(1), read_letters(path), count=1)
+            if n:
+                write_letters(new, path)
+                break
     if not n:
         print("没找到标【待接】或【接手中】的 " + source_id)
         return
@@ -230,7 +272,25 @@ def mark_done(source_id, how):
     print("已标【已接】：" + source_id)
 
 
+def pending():
+    """列出所有来信文件里还没接的（【待接…】【接手中…】）。"""
+    import re
+    total = 0
+    for path in letter_files():
+        heads = [l for l in read_letters(path).splitlines() if re.match(r"^## 【(?:待接|接手中)", l)]
+        if heads:
+            print(f"== {path}（{len(heads)} 条）")
+            for h in heads:
+                print("  " + h[3:])
+            total += len(heads)
+    if not total:
+        print("所有来信文件里都没有待接的")
+
+
 if __name__ == "__main__":
+    if len(sys.argv) >= 2 and sys.argv[1] == "--pending":
+        pending()
+        sys.exit(0)
     if len(sys.argv) >= 4 and sys.argv[1] == "--done":
         mark_done(sys.argv[2], " ".join(sys.argv[3:]))
         sys.exit(0)

@@ -1,0 +1,8 @@
+{
+ "_note": "信头【项目｜单号】里的「项目」只认这里的名字（键）或 aliases。letters＝这个项目的来信文件（不写就是 ~/.grok-dispatch/letters/<项目>.md），handoff＝接这个项目的信前先读的接班 / 笔记文件。",
+ "projects": {
+  "AI for AI": {"aliases": ["带教", "三方互通"], "letters": "~/Projects/ai-for-ai/来信.md", "handoff": "~/Projects/ai-for-ai/00_接班.md"},
+  "官方账号运营": {"aliases": [], "handoff": "~/Projects/brand/00_接班.md"},
+  "AI数字人项目": {"aliases": ["数字人"], "handoff": "~/Projects/brand/00_接班.md"}
+ }
+}

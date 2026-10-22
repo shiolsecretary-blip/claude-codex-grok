@@ -12,7 +12,8 @@ Config (all optional except bots), in ~/.grok-dispatch/ (override with GROK_LINK
   bots.json     {"default": "<bot-id>", "lead": "<bot-id>", ...}   short names -> bot ids
   webhook.json  {"url": "https://.../webhook/<routine-id>", "key": "crsr_... or whsec_..."}  chmod 600
 Usage:
-  python3 grok_chat.py lead "hello"            send and wait for the reply (default 5 min)
+  python3 grok_chat.py lead "hello" --project P --ticket T   send and wait for the reply (default 5 min);
+                                               --project/--ticket are required to send (header 【P｜T】, see project_route.py)
   python3 grok_chat.py lead --read 6           show the last 6 messages
   python3 grok_chat.py --status | --wake       probe only / wake only
   python3 grok_chat.py --inbox 10              show the local inbox written by the patched relay
@@ -283,6 +284,8 @@ def main():
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--wake", action="store_true")
     ap.add_argument("--inbox", type=int, default=0)
+    ap.add_argument("--project", default="", help="required to send: project name in projects.json")
+    ap.add_argument("--ticket", default="", help="required to send: ticket id, or 「无单号」")
     a = ap.parse_args()
     if a.inbox:
         return show_inbox(a.inbox)
@@ -299,7 +302,10 @@ def main():
         return show(entries(data)) if ok else die(out.strip()[:400])
     if not a.message:
         ap.error("message required (or --read N)")
-    chat(bot, a.message, a.wait, a.quiet)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import project_route as pr  # every message starts with the header 【project｜ticket】
+    project, ticket = pr.require(a.project, a.ticket)
+    chat(bot, pr.header(project, ticket) + "\n" + a.message, a.wait, a.quiet)
 
 
 if __name__ == "__main__":
