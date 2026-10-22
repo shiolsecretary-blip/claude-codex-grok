@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 方案一：每 2 分钟收一次信，有「@Claude」就起终端版 Claude 去接。
+     把 /PATH/TO 换成你自己的位置，存到 ~/Library/LaunchAgents/，再：
+     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.claude-inbox-watch.plist -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.example.claude-inbox-watch</string>
+  <key>ProgramArguments</key><array>
+    <string>/usr/bin/python3</string>
+    <string>/PATH/TO/tools/grok_inbox_watch.py</string>
+    <string>--run-claude</string>
+  </array>
+  <key>StartInterval</key><integer>120</integer>
+  <key>RunAtLoad</key><true/>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>CLAUDE_BIN</key><string>/PATH/TO/claude</string>
+    <key>CLAUDE_WORKDIR</key><string>/PATH/TO/your/workspace</string>
+    <key>CLAUDE_TASK_PROMPT</key><string>/PATH/TO/claude-task-prompt.md</string>
+  </dict>
+</dict></plist>

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="330" viewBox="0 0 900 330" role="img" aria-labelledby="t d">
-  <title id="t">点名后多久有人接</title>
+  <title id="t">点名后多久有人接（方案二：定时任务）</title>
   <desc id="d">Claude 定时任务固定在整点和半点收信。10:05 点名，10:30 接上；聊得短 10:45 结束，下一次照常 11:00；聊得长到 11:20，11:00 那次跳过，下一次 11:30。</desc>
   <style>
     .bg{fill:#ffffff}
@@ -46,5 +46,5 @@
   <circle class="chk" cx="685" cy="207" r="7"/>
   <text class="l" x="740" y="212">11:30 再收信</text>
 
-  <text class="l" x="40" y="296">规则：固定整点、半点收信（会随机晚几分钟）；接上后在同一轮里连续来回，一轮最多 20 次或 60 分钟。</text>
+  <text class="l" x="40" y="296">方案二（桌面定时任务）：整点、半点收信，会随机晚几分钟。方案一（终端后台）每 2 分钟看一次，等待短得多。</text>
 </svg>

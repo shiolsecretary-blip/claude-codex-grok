@@ -14,10 +14,23 @@
 | Claude → Codex | `tools/gpt_chat.py`，发进 Codex 的一个专用聊天 | 当场，等这一轮答完拿回复 |
 | Codex → Grok | Codex 里的 grok-bot MCP | 当场 |
 | Grok → Codex | 回 Codex 自己问的话，或第一行以「@GPT」开头 | 实时推进 Codex 聊天 |
-| Grok → Claude | 第一行以「@Claude」开头，进本机收件箱 | 定时收信，最多一个周期（如 30 分钟） |
+| Grok → Claude | 第一行以「@Claude」开头，进本机收件箱 | 方案一约 2 分钟；方案二最多 30 分钟 |
 | Codex → Claude | `tools/ask_claude.py` 投信，进同一个收件箱 | 同上 |
 
-**为什么 Claude 要定时收信？** Codex 桌面版有本机后台服务，外部程序能把消息塞进它的聊天，所以 Grok 能直接「叫醒」Codex。Claude 桌面版没有这个入口，只能定时去看收件箱。接上以后，在同一轮里可以连续来回，不用每句都再等。
+## Claude 怎么接点名：两个方案
+
+Codex 桌面版有本机后台服务，外部程序能把消息塞进它的聊天，所以 Grok 能直接「叫醒」Codex。Claude 桌面版没有这个入口，所以 Claude 这边是**收件箱 + 起一个 Claude 去接**。两个方案用同一个收信脚本、同一份提示词，先试方案一，用不了再换方案二。
+
+| | 方案一：终端后台（首选） | 方案二：桌面定时任务（退路） |
+|---|---|---|
+| 怎么跑 | 开机项每 2 分钟跑 `grok_inbox_watch.py --run-claude`；有新点名就起终端版 `claude -p` 去接 | Claude 桌面应用的定时任务每 30 分钟跑一次，先收信，有就接 |
+| 多快接上 | 约 2 分钟 | 最多 30 分钟出头 |
+| 要什么 | 终端里的 `claude` 能登录、能连上服务（先跑 `claude -p "回复 ok"` 试一下） | 桌面应用开着 |
+| 没点名时 | 只跑一个小脚本，不起 Claude，不花额度 | 每次起一轮，只跑一条命令就结束，花得很少 |
+| 起不来时 | 来信留着【待接】，日志写明原因；方案二照样能接 | — |
+
+两个方案都是：接上以后在同一轮里连续来回，不用每句都再等；一轮最多 20 次或 60 分钟。两个可以同时开，方案一接不了的，方案二兜底。
+
 
 ![点名后多久有人接](docs/mention-timing.svg)
 
@@ -84,21 +97,26 @@ node "$B/bin/gbot.mjs" codex bridge --help
 1. `~/.grok-dispatch/bots.json`：Bot 简称对应的 id，照 `tools/bots.example.json` 写，必须有 `default`。
 2. 叫醒（可选）：`~/.grok-dispatch/webhook.json` 写 Grok Bot 例行任务的网址和钥匙，`chmod 600`。不写也行，只会重启本机 Grok Bot 应用。
 3. 转发器自动拉起（可选）：`~/.grok-dispatch/relay-env.json` 写 `{"PATH": "...", "GROK_BOT_RELAY_DIR": "...", "relay": "<副本>/scripts/gbot-relay.mjs"}`，值照正在跑的转发器填。
-4. 在 Claude 桌面应用里建一个定时任务（如 `*/30 9-21 * * *`），提示词照 `tools/scheduled-task-prompt.md` 改成你自己的文件位置。
-5. 告诉 Codex 怎么找 Claude：在它的全局说明里写上 `python3 <tools>/ask_claude.py "要说的话"`。Codex 默认只读沙箱，往收件箱写信要用户批准一次。
+4. 提示词：照 `tools/scheduled-task-prompt.md` 改成你自己的文件位置，存成 `~/.grok-dispatch/claude-task-prompt.md`。
+5. 接点名，先试方案一：
+   - 终端里跑 `claude -p "回复 ok"`，能回 ok 就说明终端版能用。
+   - 照 `tools/claude-inbox-watch.plist.example` 写开机项（每 2 分钟一次），`launchctl bootstrap` 装上。
+   - 终端版只给了读文件和三条命令（`grok_chat.py`、`gpt_chat.py`、`grok_inbox_watch.py`）的权限，别的做不了。
+6. 终端版用不了（没登录、连不上服务），换方案二：在 Claude 桌面应用里建一个定时任务（如 `*/30 9-21 * * *`），提示词贴同一份。
+7. 告诉 Codex 怎么找 Claude：在它的全局说明里写上 `python3 <tools>/ask_claude.py "要说的话"`。Codex 默认只读沙箱，往收件箱写信要用户批准一次。
 
 | 命令 | 干什么 |
 |---|---|
 | `grok_chat.py <bot> "话"` | 跟 Grok Bot 对话，等回复；`--read N` 看最近几条，`--status` / `--wake` 只探 / 只叫醒，`--inbox N` 看收件箱 |
 | `gpt_chat.py "话"` | 发进 Codex 的专用聊天，等这一轮答完打印回复；`--new` 另开聊天，`--status` 看连通 |
 | `ask_claude.py "话"` | Codex 给 Claude 投信 |
-| `grok_inbox_watch.py` | 收信：新的「@Claude」和投信记进来信文件（标【待接】）并打印；`--done <编号> "<怎么办的>"` 标【已接】 |
+| `grok_inbox_watch.py` | 收信：新的「@Claude」和投信记进来信文件（标【待接】）并打印；`--run-claude` 收到就起终端版 Claude 去接（方案一）；`--done <编号> "<怎么办的>"` 标【已接】 |
 
 ## 验证范围与局限
 
-- 本机实测过：Codex ↔ Grok 两轮收发；Grok「@GPT」实时推进 Codex，Codex 回了话；Grok「@Claude」进收件箱，定时任务接住并回复；Claude → Codex 当场拿到回复；Codex 投信，定时任务接住并回复。
+- 本机实测过：Codex ↔ Grok 两轮收发；Grok「@GPT」实时推进 Codex，Codex 回了话；Grok「@Claude」进收件箱，定时任务（方案二）接住并回复；Claude → Codex 当场拿到回复；Codex 投信，定时任务接住并回复；方案一在终端版连不上时会认出来，把来信留给方案二。方案一端到端接信，在终端版能用的机器上还要自己测一次。
 - 推送靠后台转发器轮询。转发器没配开机守护，电脑离线、Grok 登录失效、Codex 后台或转发器退出时都会断，不保证全天候即时投递。Grok 云端电脑闲下来几分钟就睡，睡着时转发器也收不到新消息，直到它被叫醒。
-- Claude 这边只在桌面应用开着时收信；应用关着，下次打开才补跑。
+- 方案一要终端版 `claude` 能登录、能连上服务；有的网络环境下桌面应用能用、终端版连不上，这时用方案二。方案二只在桌面应用开着时收信，应用关着，下次打开才补跑。
 - 接上以后的多轮连续对话还没做过长时间验收。安装器验证不等于每台机器都端到端接通，请自己做一次唯一标记测试。
 - 出了问题，先查转发器状态（`codex bridge status`）、Grok 登录、Codex 后台、目标聊天有没有加载，别光看绑定记录在就以为在线。停用：`codex bridge stop` 停自己的绑定，`desktop-shim uninstall` 撤掉桌面接入。
 

@@ -1,11 +1,15 @@
-# Scheduled Claude task: answer "@Claude" mentions
+# 接点名的提示词（两个方案共用）
 
-Create a Claude desktop scheduled task (e.g. cron `*/30 9-21 * * *`) with this prompt, adjusted to your own files:
+- 方案一（终端后台）：存成 `~/.grok-dispatch/claude-task-prompt.md`（或用 `CLAUDE_TASK_PROMPT` 指定），`grok_inbox_watch.py --run-claude` 收到新点名时用它起 `claude -p`。
+- 方案二（桌面定时任务）：在 Claude 桌面应用里建定时任务（如 `*/30 9-21 * * *`），提示词贴这段。
+
+按你自己的文件位置改：
 
 ```
 Step 1 (always; usually the run ends here):
 Run `python3 <tools>/grok_inbox_watch.py`. If it prints 「没有新的点名」 and the letters file has no 【待接】 entries,
 reply 「没有新的点名」 and stop without calling any other tool.
+(If it says 「上一轮还在跑」, you were started by --run-claude: just handle the 【待接】 entries in the letters file.)
 
 For each 【待接】 letter:
 1. Read your own handoff/notes file for current context.

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560" role="img" aria-labelledby="t d">
   <title id="t">Claude Code、Codex、Grok Bot 三方互通总览</title>
-  <desc id="d">Claude 和 Codex 都向同一个 Grok Bot 对话发话；后台转发器按点名分拣：回 Codex 的和以 @GPT 开头的推给 Codex，其余存进本机收件箱，@Claude 开头的打标；Codex 也能用 ask_claude 投信进收件箱；Claude 定时任务收信后接上并连续对话；Claude 和 Codex 之间用 gpt_chat 直接对话。</desc>
+  <desc id="d">Claude 和 Codex 都向同一个 Grok Bot 对话发话；后台转发器按点名分拣：回 Codex 的和以 @GPT 开头的推给 Codex，其余存进本机收件箱，@Claude 开头的打标；Codex 也能用 ask_claude 投信进收件箱；Claude 收信（首选终端后台，约 2 分钟；终端用不了就用桌面定时任务）后接上并连续对话；Claude 和 Codex 之间用 gpt_chat 直接对话。</desc>
   <style>
     .bg{fill:#ffffff}
     .t{font:500 16px -apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;fill:#1f2328}
@@ -84,8 +84,8 @@
   <line class="mail" x1="335" y1="460" x2="274" y2="460" marker-end="url(#am)"/>
   <text class="l" x="304" y="448" text-anchor="middle">收信</text>
   <rect class="claude" x="40" y="420" width="230" height="80" rx="10" stroke-width="1.2"/>
-  <text class="t" x="155" y="452" text-anchor="middle">Claude 定时任务</text>
-  <text class="s" x="155" y="476" text-anchor="middle">每 30 分钟收一次信</text>
+  <text class="t" x="155" y="452" text-anchor="middle">Claude 收信</text>
+  <text class="s" x="155" y="476" text-anchor="middle">终端约 2 分钟；不行用定时任务</text>
 
   <!-- 接上 -->
   <line class="mail" x1="155" y1="420" x2="155" y2="214" marker-end="url(#am)"/>

@@ -69,7 +69,44 @@ def record(msgs, note="【待接】"):
             f.write(f"\n## {note} {who}{datetime.now().strftime('%Y-%m-%d %H:%M')} · {m.get('sourceId')}\n\n{(m.get('body') or '').strip()}\n")
 
 
-def main():
+TOOLS = os.path.dirname(os.path.abspath(__file__))
+PROMPT_FILE = os.environ.get("CLAUDE_TASK_PROMPT", os.path.join(D, "claude-task-prompt.md"))
+CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "claude")
+CLAUDE_CWD = os.environ.get("CLAUDE_WORKDIR", HOME)
+
+
+def run_claude(msgs):
+    """方案一：起一个终端版 Claude（claude -p）去接。起不来就把来信留着【待接】，交给定时任务（方案二）。"""
+    try:
+        prompt = open(PROMPT_FILE, encoding="utf-8").read()
+    except OSError:
+        log("没有提示词文件 " + PROMPT_FILE + "，留给定时任务")
+        return
+    tools = ",".join(["Read", "Grep", "Glob"] + [f"Bash(python3 {os.path.join(TOOLS, n)}:*)"
+                                                  for n in ("grok_chat.py", "gpt_chat.py", "grok_inbox_watch.py")])
+    ids = ",".join(str(m.get("sourceId")) for m in msgs)
+    try:
+        r = subprocess.run([CLAUDE_BIN, "-p", prompt, "--allowedTools", tools, "--no-session-persistence"],
+                           cwd=CLAUDE_CWD, capture_output=True, text=True, timeout=3900)
+        out = (r.stdout or r.stderr or "").strip()
+        ok = r.returncode == 0 and not any(k in out for k in ("Not logged in", "Unable to connect", "ERR_BAD_REQUEST"))
+    except FileNotFoundError:
+        out, ok = "找不到 claude 命令", False
+    except subprocess.TimeoutExpired:
+        out, ok = "终端 Claude 超过 65 分钟没跑完，停了", False
+    if ok:
+        log("终端 Claude 接了 " + ids + " → " + out[-400:].replace("\n", " "))
+        notify("已接点名：" + out[-80:])
+    else:
+        log("终端 Claude 没起来（" + out[-200:].replace("\n", " ") + "），" + ids + " 留【待接】给定时任务")
+
+
+def notify(text):
+    subprocess.run(["osascript", "-e", f'display notification {json.dumps(text)} with title "Claude 收信"'],
+                   capture_output=True)
+
+
+def main(run=False):
     os.makedirs(D, exist_ok=True)
     lock = open(os.path.join(D, "inbox-watch.lock"), "w")
     try:
@@ -122,6 +159,8 @@ def main():
     for m in msgs:
         who = "（来自 GPT，用 gpt_chat.py 回）" if m.get("from") == "gpt" else "（来自 Grok，用 grok_chat.py 回）"
         print(f"--- {m.get('sourceId')} {who}\n{(m.get('body') or '').strip()}\n")
+    if run:
+        run_claude(msgs)  # 还拿着锁：两分钟后的下一次检查不会重复起
 
 
 def mark_done(source_id, how):
@@ -143,7 +182,7 @@ if __name__ == "__main__":
         mark_done(sys.argv[2], " ".join(sys.argv[3:]))
         sys.exit(0)
     try:
-        main()
+        main(run="--run-claude" in sys.argv[1:])
     except Exception as e:  # 开机项里出错只记日志
         log("出错：" + repr(e))
         sys.exit(0)
