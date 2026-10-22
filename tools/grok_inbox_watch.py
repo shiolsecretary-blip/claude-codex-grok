@@ -7,7 +7,9 @@ Run it first in a scheduled Claude task (e.g. every 30 minutes):
   3. appends them to the letters file (CLAUDE_LETTERS, default ~/.grok-dispatch/letters.md) marked 【待接】;
   4. prints them, or "没有新的点名" when there is nothing new.
   grok_inbox_watch.py --done <sourceId> "<what was done>"   marks a letter 【已接】.
-The first run only records the current position.
+The first run reads the whole inbox; letters already in the letters file are skipped, so re-runs never duplicate.
+The read position is saved only after the letters file is written, so a failed write is retried next time.
+With --run-claude, new letters are claimed as 【接手中 · 终端】 before `claude -p` starts and handed back as 【待接】 if it fails.
 """
 import fcntl
 import json
@@ -61,12 +63,20 @@ def save_state(s):
 
 
 def record(msgs, note="【待接】"):
+    try:
+        have = open(LETTERS, encoding="utf-8").read()
+    except FileNotFoundError:
+        have = ""
+    msgs = [m for m in msgs if f"· {m.get('sourceId')}\n" not in have]
+    if not msgs:
+        return msgs
     with open(LETTERS, "a", encoding="utf-8") as f:
         if f.tell() == 0:
             f.write("# Letters\n\n「@Claude」开头的来信，收信脚本自动存在这里（新的在下面）。接了把【待接】改成【已接 · 怎么办的】。\n")
         for m in msgs:
             who = "来自 GPT · " if m.get("from") == "gpt" else ""
             f.write(f"\n## {note} {who}{datetime.now().strftime('%Y-%m-%d %H:%M')} · {m.get('sourceId')}\n\n{(m.get('body') or '').strip()}\n")
+    return msgs
 
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
@@ -85,6 +95,10 @@ def run_claude(msgs):
     tools = ",".join(["Read", "Grep", "Glob"] + [f"Bash(python3 {os.path.join(TOOLS, n)}:*)"
                                                   for n in ("grok_chat.py", "gpt_chat.py", "grok_inbox_watch.py")])
     ids = ",".join(str(m.get("sourceId")) for m in msgs)
+    # 先认领：标成【接手中 · 终端】，定时任务（方案二）只接【待接】，不会重复回
+    set_status([m.get("sourceId") for m in msgs], "【待接】", "【接手中 · 终端】")
+    prompt += ("\n\n本轮由收信脚本（终端方案）启动。你负责的来信编号：" + ids +
+               "（来信文件里标【接手中 · 终端】）。只处理这几条；收信脚本说「上一轮还在跑」是正常的，那是启动你的这一轮。")
     try:
         r = subprocess.run([CLAUDE_BIN, "-p", prompt, "--allowedTools", tools, "--no-session-persistence"],
                            cwd=CLAUDE_CWD, capture_output=True, text=True, timeout=3900)
@@ -98,7 +112,17 @@ def run_claude(msgs):
         log("终端 Claude 接了 " + ids + " → " + out[-400:].replace("\n", " "))
         notify("已接点名：" + out[-80:])
     else:
-        log("终端 Claude 没起来（" + out[-200:].replace("\n", " ") + "），" + ids + " 留【待接】给定时任务")
+        set_status([m.get("sourceId") for m in msgs], "【接手中 · 终端】", "【待接】")  # 退回，交给定时任务
+        log("终端 Claude 没起来（" + out[-200:].replace("\n", " ") + "），" + ids + " 退回【待接】给定时任务")
+
+
+def set_status(ids, frm, to):
+    """把来信里这几条的标题状态从 frm 换成 to（终端方案认领 / 退回用）。"""
+    import re
+    text = open(LETTERS, encoding="utf-8").read()
+    for i in ids:
+        text = re.sub(r"^## " + re.escape(frm) + r"(.*· " + re.escape(str(i)) + r")\s*$", "## " + to + r"\1", text, count=1, flags=re.M)
+    open(LETTERS, "w", encoding="utf-8").write(text)
 
 
 def notify(text):
@@ -118,10 +142,7 @@ def main(run=False):
     s = load_state()
     size = os.path.getsize(INBOX) if os.path.exists(INBOX) else 0
     if "offset" not in s or s["offset"] > size:
-        s["offset"] = size
-        save_state(s)
-        print("没有新的点名（第一次跑，只记位置）")
-        return
+        s["offset"] = 0  # 第一次跑或收件箱被清过：从头读，已经记进来信的会跳过
     if size == s["offset"]:
         print("没有新的点名")
         return
@@ -144,14 +165,17 @@ def main(run=False):
     today = datetime.now().strftime("%Y-%m-%d")
     if s.get("day") != today:
         s["day"], s["runs"] = today, 0
-    if msgs:
-        s["runs"] = s.get("runs", 0) + len(msgs)
-    save_state(s)
     if not msgs:
+        save_state(s)
         print("没有新的点名")
         return
+    s["runs"] = s.get("runs", 0) + len(msgs)
     over = s["runs"] > DAILY_CAP
-    record(msgs, "【待接·超当天上限，只记不回】" if over else "【待接】")
+    msgs = record(msgs, "【待接·超当天上限，只记不回】" if over else "【待接】")  # 先写来信；写失败就抛错，读到哪不前移，下次重读
+    save_state(s)
+    if not msgs:
+        print("没有新的点名（这几封之前已记过）")
+        return
     log("收到点名 " + ",".join(str(m.get("sourceId")) for m in msgs) + ("（超上限）" if over else ""))
     if over:
         print(f"今天点名已超 {DAILY_CAP} 条，这几条只记进来信文件，不回，等人看。")
@@ -167,10 +191,10 @@ def mark_done(source_id, how):
     """把来信里这条的【待接…】标成【已接 · how】。用法：grok_inbox_watch.py --done t146s470 "回了她…" """
     import re
     text = open(LETTERS, encoding="utf-8").read()
-    pat = re.compile(r"^## 【待接[^】]*】(.*· " + re.escape(source_id) + r")\s*$", re.M)
+    pat = re.compile(r"^## 【(?:待接|接手中)[^】]*】(.*· " + re.escape(source_id) + r")\s*$", re.M)
     new, n = pat.subn(lambda m: "## 【已接 · " + how.strip().replace("\n", " ") + "】" + m.group(1), text, count=1)
     if not n:
-        print("没找到标【待接】的 " + source_id)
+        print("没找到标【待接】或【接手中】的 " + source_id)
         return
     open(LETTERS, "w", encoding="utf-8").write(new)
     log("标已接 " + source_id + "：" + how.strip()[:200])

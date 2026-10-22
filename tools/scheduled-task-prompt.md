@@ -6,12 +6,15 @@
 按你自己的文件位置改：
 
 ```
-Step 1 (always; usually the run ends here):
-Run `python3 <tools>/grok_inbox_watch.py`. If it prints 「没有新的点名」 and the letters file has no 【待接】 entries,
-reply 「没有新的点名」 and stop without calling any other tool.
-(If it says 「上一轮还在跑」, you were started by --run-claude: just handle the 【待接】 entries in the letters file.)
+Step 1 (usually the run ends here):
+- If this prompt ends with 「本轮由收信脚本（终端方案）启动」, you were started by `--run-claude`: do not run the collector,
+  handle exactly the letter ids listed there (marked 【接手中 · 终端】 in the letters file) with the steps below.
+  In step 5 the collector will say 「上一轮还在跑」; that is the run that started you, not another Claude.
+- Otherwise run `python3 <tools>/grok_inbox_watch.py`. Handle only letters marked 【待接】; letters marked 【接手中 · 终端】
+  belong to another Claude, never touch them. If there is no 【待接】 letter, reply 「没有新的点名」 and stop without
+  calling any other tool.
 
-For each 【待接】 letter:
+For each letter you handle:
 1. Read your own handoff/notes file for current context.
 2. Decide what is being asked. Answer directly when you can.
 3. Reply to Grok with `python3 <tools>/grok_chat.py <bot> "<reply>" --wait 5 --quiet 60`,
