@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Collect "@Claude" mentions (from Grok Bot via the patched relay, or from Codex via ask_claude.py).
+
+Run it first in a scheduled Claude task (e.g. every 30 minutes):
+  1. restarts the relay worker if it is not running (from ~/.grok-dispatch/relay-env.json);
+  2. reads new lines of ~/.grok-dispatch/grok-inbox.jsonl and keeps those with to == "claude";
+  3. appends them to the letters file (CLAUDE_LETTERS, default ~/.grok-dispatch/letters.md) marked 【待接】;
+  4. prints them, or "没有新的点名" when there is nothing new.
+  grok_inbox_watch.py --done <sourceId> "<what was done>"   marks a letter 【已接】.
+The first run only records the current position.
+"""
+import fcntl
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime
+
+HOME = os.path.expanduser("~")
+D = os.path.join(HOME, ".grok-dispatch")
+INBOX = os.path.join(D, "grok-inbox.jsonl")
+STATE = os.path.join(D, "inbox-watch.json")
+LOG = os.path.join(D, "inbox-watch.log")
+RELAY_ENV = os.path.join(D, "relay-env.json")
+LETTERS = os.environ.get("CLAUDE_LETTERS", os.path.join(D, "letters.md"))
+DAILY_CAP = 30
+
+
+def log(msg):
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(datetime.now().strftime("%m-%d %H:%M:%S ") + msg + "\n")
+
+
+def ensure_relay():
+    try:
+        env = json.load(open(RELAY_ENV, encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    relay = env["relay"]
+    if subprocess.run(["pgrep", "-f", relay], capture_output=True).returncode == 0:
+        return
+    if not os.path.exists(relay):
+        log("转发器脚本不在：" + relay)
+        return
+    e = dict(os.environ, PATH=env["PATH"], GROK_BOT_RELAY_DIR=env["GROK_BOT_RELAY_DIR"])
+    subprocess.Popen(["/usr/local/bin/node", relay], cwd=os.path.dirname(relay), env=e,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True)
+    log("转发器没在跑，已拉起")
+
+
+def load_state():
+    try:
+        return json.load(open(STATE, encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(s):
+    json.dump(s, open(STATE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+
+
+def record(msgs, note="【待接】"):
+    with open(LETTERS, "a", encoding="utf-8") as f:
+        if f.tell() == 0:
+            f.write("# Letters\n\n「@Claude」开头的来信，收信脚本自动存在这里（新的在下面）。接了把【待接】改成【已接 · 怎么办的】。\n")
+        for m in msgs:
+            who = "来自 GPT · " if m.get("from") == "gpt" else ""
+            f.write(f"\n## {note} {who}{datetime.now().strftime('%Y-%m-%d %H:%M')} · {m.get('sourceId')}\n\n{(m.get('body') or '').strip()}\n")
+
+
+def main():
+    os.makedirs(D, exist_ok=True)
+    lock = open(os.path.join(D, "inbox-watch.lock"), "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("没有新的点名（上一轮还在跑）")
+        return
+    ensure_relay()
+    s = load_state()
+    size = os.path.getsize(INBOX) if os.path.exists(INBOX) else 0
+    if "offset" not in s or s["offset"] > size:
+        s["offset"] = size
+        save_state(s)
+        print("没有新的点名（第一次跑，只记位置）")
+        return
+    if size == s["offset"]:
+        print("没有新的点名")
+        return
+    with open(INBOX, "rb") as f:
+        f.seek(s["offset"])
+        chunk = f.read()
+    end = chunk.rfind(b"\n") + 1  # 只处理写完整的行
+    s["offset"] += end
+    seen = s.get("seen", [])
+    msgs = []
+    for line in chunk[:end].decode("utf-8", "replace").splitlines():
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if r.get("to") == "claude" and r.get("sourceId") not in seen:
+            seen.append(r.get("sourceId"))
+            msgs.append(r)
+    s["seen"] = seen[-200:]
+    today = datetime.now().strftime("%Y-%m-%d")
+    if s.get("day") != today:
+        s["day"], s["runs"] = today, 0
+    if msgs:
+        s["runs"] = s.get("runs", 0) + len(msgs)
+    save_state(s)
+    if not msgs:
+        print("没有新的点名")
+        return
+    over = s["runs"] > DAILY_CAP
+    record(msgs, "【待接·超当天上限，只记不回】" if over else "【待接】")
+    log("收到点名 " + ",".join(str(m.get("sourceId")) for m in msgs) + ("（超上限）" if over else ""))
+    if over:
+        print(f"今天点名已超 {DAILY_CAP} 条，这几条只记进来信文件，不回，等人看。")
+        return
+    for m in msgs:
+        who = "（来自 GPT，用 gpt_chat.py 回）" if m.get("from") == "gpt" else "（来自 Grok，用 grok_chat.py 回）"
+        print(f"--- {m.get('sourceId')} {who}\n{(m.get('body') or '').strip()}\n")
+
+
+def mark_done(source_id, how):
+    """把来信里这条的【待接…】标成【已接 · how】。用法：grok_inbox_watch.py --done t146s470 "回了她…" """
+    import re
+    text = open(LETTERS, encoding="utf-8").read()
+    pat = re.compile(r"^## 【待接[^】]*】(.*· " + re.escape(source_id) + r")\s*$", re.M)
+    new, n = pat.subn(lambda m: "## 【已接 · " + how.strip().replace("\n", " ") + "】" + m.group(1), text, count=1)
+    if not n:
+        print("没找到标【待接】的 " + source_id)
+        return
+    open(LETTERS, "w", encoding="utf-8").write(new)
+    log("标已接 " + source_id + "：" + how.strip()[:200])
+    print("已标【已接】：" + source_id)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) >= 4 and sys.argv[1] == "--done":
+        mark_done(sys.argv[2], " ".join(sys.argv[3:]))
+        sys.exit(0)
+    try:
+        main()
+    except Exception as e:  # 开机项里出错只记日志
+        log("出错：" + repr(e))
+        sys.exit(0)

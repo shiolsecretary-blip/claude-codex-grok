@@ -46,7 +46,7 @@
   {
     "path": "scripts/gbot-relay.mjs",
     "before_sha256": "71f66a31431fb47f0734fcfd89ede42dddf120d93f4202d93a9b362e1dde0ddc",
-    "after_sha256": "66936e65475fb0a774ac96a539a93eaafe6d804d715fffa45a7b2006fcc17a92",
+    "after_sha256": "820abc77046f7cecfabac073af9a2f20c20ceadc5f16e64f9b62a2b452bff178",
     "edits": [
       {
         "old": "                    const text = `[Grok sender ${targetId}; message ${sourceId}]\\n${approvalNotice ? \"Approval notice. Your next final answer is not returned automatically.\" : parent ? \"Reply to a tracked request. Your next final answer is not returned automatically.\" : \"Linked conversation. Your corresponding final answer returns automatically to Grok.\"}\\n\\n${body}`;\n",
@@ -55,6 +55,14 @@
       {
         "old": "        function codexSenderPrefix({ threadId, machine, cwd, details = [], env = process.env } = {}) {\n            const id = oneLine(threadId);\n            if (!id) return \"\";\n            const where = oneLine(machine ?? machineName(env));\n            const dir = oneLine(cwd);\n            const head = \"from Codex thread \" + id + (where ? \" @ \" + where : \"\") + (dir ? (where ? \", \" : \" \") + \"cwd \" + dir : \"\");\n            const reply = \"reply: codex_send({threadId:\\\"\" + id + \"\\\", message:\\\"...\\\"})\" + (where ? \" via MCP on \" + where : \" via MCP\") + \" (or CLI: gbot codex send \" + id + \" \\\"...\\\")\";\n            return \"[\" + [\n                head,\n                ...details.map(oneLine).filter(Boolean),\n                reply\n            ].join(\"; \") + \"]\";\n",
         "new": "        function codexSenderPrefix({ threadId } = {}) {\n            return threadId ? \"[GPT Codex 直接对话]\" : \"\";\n"
+      },
+      {
+        "old": "                    const destination = parent ?? binding;\n                    if (!destination) continue;\n",
+        "new": "                    if (!parent && !approvalNotice) {\n                        let raw = \"\";\n                        try { raw = String((0, _transcript_js__rspack_import_2.u0)(entry) ?? \"\"); } catch {}\n                        const head = raw.replace(/^[\\s*_#>]+/, \"\");\n                        if (!/^[@＠]\\s*(GPT|Codex)/i.test(head)) {\n                            try {\n                                const fs = await import(\"node:fs\"), os = await import(\"node:os\"), path = await import(\"node:path\");\n                                const dir = path.join(os.homedir(), \".grok-dispatch\");\n                                fs.mkdirSync(dir, { recursive: true });\n                                fs.appendFileSync(path.join(dir, \"grok-inbox.jsonl\"), JSON.stringify({ at: new Date().toISOString(), targetId, sourceId: (0, _transcript_js__rspack_import_2.p2)(entry), requestId: entry.requestId ?? null, to: /^[@＠]\\s*Claude/i.test(head) ? \"claude\" : null, body: raw }) + \"\\n\");\n                            } catch {}\n                            continue;\n                        }\n                    }\n                    const destination = parent ?? binding;\n                    if (!destination) continue;\n"
+      },
+      {
+        "old": "                    ].includes(r.submission) && !r.requestId);\n                for (const entry of incoming){\n",
+        "new": "                    ].includes(r.submission) && !r.requestId && clock() - (r.createdAt ?? 0) < 1800000);\n                for (const entry of incoming){\n"
       }
     ]
   }
