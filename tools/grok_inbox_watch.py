@@ -9,6 +9,8 @@ Run it first in a scheduled Claude task (e.g. every 30 minutes):
   grok_inbox_watch.py --done <sourceId> "<what was done>"   marks a letter 【已接】.
 The first run reads the whole inbox; letters already in the letters file are skipped, so re-runs never duplicate.
 The read position is saved only after the letters file is written, so a failed write is retried next time.
+Every change to the letters file takes a short lock (letters.lock, separate from the long collector lock) and is
+written to a temp file then swapped in, so concurrent claim / hand-back / --done never overwrite each other.
 With --run-claude, new letters are claimed as 【接手中 · 终端】 before `claude -p` starts and handed back as 【待接】 if it fails.
 """
 import fcntl
@@ -16,6 +18,7 @@ import json
 import os
 import subprocess
 import sys
+from contextlib import contextmanager
 from datetime import datetime
 
 HOME = os.path.expanduser("~")
@@ -62,20 +65,44 @@ def save_state(s):
     json.dump(s, open(STATE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
 
-def record(msgs, note="【待接】"):
+@contextmanager
+def letters_lock():
+    """改来信文件专用的短锁：记新信、认领、退回、标已接都先拿它，改完立刻放。
+    和收信用的长锁（inbox-watch.lock，等 Claude 回信期间一直占着）分开。"""
+    os.makedirs(D, exist_ok=True)
+    with open(os.path.join(D, "letters.lock"), "w") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        yield
+
+
+def read_letters():
     try:
-        have = open(LETTERS, encoding="utf-8").read()
+        return open(LETTERS, encoding="utf-8").read()
     except FileNotFoundError:
-        have = ""
-    msgs = [m for m in msgs if f"· {m.get('sourceId')}\n" not in have]
-    if not msgs:
-        return msgs
-    with open(LETTERS, "a", encoding="utf-8") as f:
-        if f.tell() == 0:
-            f.write("# Letters\n\n「@Claude」开头的来信，收信脚本自动存在这里（新的在下面）。接了把【待接】改成【已接 · 怎么办的】。\n")
+        return ""
+
+
+def write_letters(text):
+    """先写临时文件再整体替换：写到一半出错，原文件不受影响。"""
+    tmp = LETTERS + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, LETTERS)
+
+
+def record(msgs, note="【待接】"):
+    with letters_lock():
+        have = read_letters()
+        msgs = [m for m in msgs if f"· {m.get('sourceId')}\n" not in have]
+        if not msgs:
+            return msgs
+        text = have or "# Letters\n\n「@Claude」开头的来信，收信脚本自动存在这里（新的在下面）。接了把【待接】改成【已接 · 怎么办的】。\n"
         for m in msgs:
             who = "来自 GPT · " if m.get("from") == "gpt" else ""
-            f.write(f"\n## {note} {who}{datetime.now().strftime('%Y-%m-%d %H:%M')} · {m.get('sourceId')}\n\n{(m.get('body') or '').strip()}\n")
+            text += f"\n## {note} {who}{datetime.now().strftime('%Y-%m-%d %H:%M')} · {m.get('sourceId')}\n\n{(m.get('body') or '').strip()}\n"
+        write_letters(text)
     return msgs
 
 
@@ -119,10 +146,11 @@ def run_claude(msgs):
 def set_status(ids, frm, to):
     """把来信里这几条的标题状态从 frm 换成 to（终端方案认领 / 退回用）。"""
     import re
-    text = open(LETTERS, encoding="utf-8").read()
-    for i in ids:
-        text = re.sub(r"^## " + re.escape(frm) + r"(.*· " + re.escape(str(i)) + r")\s*$", "## " + to + r"\1", text, count=1, flags=re.M)
-    open(LETTERS, "w", encoding="utf-8").write(text)
+    with letters_lock():
+        text = read_letters()
+        for i in ids:
+            text = re.sub(r"^## " + re.escape(frm) + r"(.*· " + re.escape(str(i)) + r")\s*$", "## " + to + r"\1", text, count=1, flags=re.M)
+        write_letters(text)
 
 
 def notify(text):
@@ -190,13 +218,14 @@ def main(run=False):
 def mark_done(source_id, how):
     """把来信里这条的【待接…】标成【已接 · how】。用法：grok_inbox_watch.py --done t146s470 "回了她…" """
     import re
-    text = open(LETTERS, encoding="utf-8").read()
     pat = re.compile(r"^## 【(?:待接|接手中)[^】]*】(.*· " + re.escape(source_id) + r")\s*$", re.M)
-    new, n = pat.subn(lambda m: "## 【已接 · " + how.strip().replace("\n", " ") + "】" + m.group(1), text, count=1)
+    with letters_lock():
+        new, n = pat.subn(lambda m: "## 【已接 · " + how.strip().replace("\n", " ") + "】" + m.group(1), read_letters(), count=1)
+        if n:
+            write_letters(new)
     if not n:
         print("没找到标【待接】或【接手中】的 " + source_id)
         return
-    open(LETTERS, "w", encoding="utf-8").write(new)
     log("标已接 " + source_id + "：" + how.strip()[:200])
     print("已标【已接】：" + source_id)
 
